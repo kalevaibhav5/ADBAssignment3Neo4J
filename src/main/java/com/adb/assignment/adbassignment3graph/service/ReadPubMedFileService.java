@@ -2,7 +2,6 @@ package com.adb.assignment.adbassignment3graph.service;
 
 import com.adb.assignment.adbassignment3graph.domain.*;
 import org.neo4j.driver.Driver;
-import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -17,11 +16,9 @@ import java.util.Calendar;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 
-import static org.neo4j.driver.Values.parameters;
-
 /**
  * @Author Vaibhav Kale
- * This Service class parse the pubmed xml.gz file using JAXB library.
+ * This Service class parse the pubmed xml.gz file using JAXB library and create the Neo4j Nodes
  */
 @Service
 public class ReadPubMedFileService {
@@ -30,6 +27,10 @@ public class ReadPubMedFileService {
     @Autowired
     Driver driver;
 
+    /**
+     * This method reads the .gz file and loads the data in memory which is then used to create the Nodes in Neo4j
+     * @throws Exception
+     */
     public void loadFile() throws Exception {
 
         try {
@@ -43,7 +44,7 @@ public class ReadPubMedFileService {
 
             List<PubMed> pubMeds = new ArrayList<>();
 
-            //Go through all the citations and insert in pubmed table
+            //Go through all the citations and prepare the object for Node's creation
             pubmedArticleSet.getPubmedArticle().forEach(pubMedArticle -> {
                 try{
                     PubMed pubMed = PubMed.builder()
@@ -70,71 +71,51 @@ public class ReadPubMedFileService {
 
             });
 
-            System.out.println("Loading complete");
+            System.out.println("Data Loading in memory complete");
 
-//            List<PubMed> pubMeds1 = pubMeds.subList(1, 10);
-
+            //Prepare all the nodes and relationships for the pubmed file.
             pubMeds.forEach(pubMed -> {
-                    createCitationNode(pubMed);
+                    createCitationNode(pubMed);   //Create Citation Node
                     if(pubMed.getAuthors() != null){
                         if(pubMed.getAuthors().getAuthorList() != null){
                             pubMed.getAuthors().getAuthorList().forEach(author -> {
-                                createAuthorNode(pubMed, author);
-                                createCitationAuthorRelationshipNode(pubMed, author);
+                                createAuthorNode(pubMed, author);        //Create Author Node
+                                createCitationAuthorRelationshipNode(pubMed, author);    //Create Author and Citation relationships
                             });
                         }
 
                     }
-                    createJournalNode(pubMed);
-                    createJournalAndCitationRelationshipNode(pubMed);
+                    createJournalNode(pubMed);    //Create Journal Node
+                    createJournalAndCitationRelationshipNode(pubMed);  //Create Journal and Citation relationships
                     if(pubMed.getKeywords() != null){
                         pubMed.getKeywords().forEach(keyword -> {
-                            createKeywordNode(keyword);
-                            createKeywordAndCitationRelationshipNode(pubMed,keyword);
+                            createKeywordNode(keyword);  //Create Keyword Node
+                            createKeywordAndCitationRelationshipNode(pubMed,keyword); //Create Keyword and Citation relationships
                         });
                     }
                     if(pubMed.getMeshHeadingList() != null){
                         if(pubMed.getMeshHeadingList().getMeshHeadings() != null){
                             pubMed.getMeshHeadingList().getMeshHeadings().forEach(meshHeading -> {
-                                createMeshNode(meshHeading.getTerm());
-                                createMeshAndCitationRelationshipNode(pubMed, meshHeading.getTerm());
+                                createMeshNode(meshHeading.getTerm()); //Create Mesh Node
+                                createMeshAndCitationRelationshipNode(pubMed, meshHeading.getTerm()); //Create Mesh and Citation relationships
                             });
                         }
                     }
             });
 
-            System.out.println("Citation Created");
+            System.out.println("Node and Relationships Created");
 
         } catch (JAXBException e) {
             e.printStackTrace();
         }
     }
 
-    private String getAuthor(PubMedArticle pubMedArticle) {
-        return (pubMedArticle.getMedCitation().getArticle().getAuthorList().getAuthorList().get(0).getForeName() != null) ?
-                (pubMedArticle.getMedCitation().getArticle().getAuthorList().getAuthorList().get(0).getForeName().concat(" ")
-                .concat(pubMedArticle.getMedCitation().getArticle().getAuthorList().getAuthorList().get(0).getLastName())) :
-                (pubMedArticle.getMedCitation().getArticle().getAuthorList().getAuthorList().get(0).getCollectiveName() != null ?
-                        pubMedArticle.getMedCitation().getArticle().getAuthorList().getAuthorList().get(0).getCollectiveName() : null);
-    }
 
-
-    public Date getDate(DateCompleted pubDate) {
-        if(pubDate == null || pubDate.getYear() == null || pubDate.getMonth() == null || pubDate.getDay() == null ){
-            return null;
-        }
-        Calendar cal = Calendar.getInstance();
-        cal.set(Calendar.YEAR, pubDate.getYear());
-        cal.set(Calendar.MONTH, pubDate.getMonth() -1);
-        cal.set(Calendar.DATE, pubDate.getDay());
-        cal.set(Calendar.HOUR, 0);
-        cal.set(Calendar.MINUTE, 0);
-        cal.set(Calendar.SECOND, 0);
-
-        return new Date(cal.getTimeInMillis());
-    }
-
-
+    /**
+     * Create the Citation Node
+     * @Properties: pmid, articletitle, abstractText
+     * @param pubMed
+     */
     public void createCitationNode( final PubMed pubMed)
     {
         try ( Session session = driver.session() )
@@ -151,6 +132,12 @@ public class ReadPubMedFileService {
         }
     }
 
+    /**
+     * Create the Author Node
+     * @Properties authorid, lastname, forename, initials
+     * @param pubMed
+     * @param author
+     */
     public void createAuthorNode(final PubMed pubMed, Author author)
     {
 
@@ -178,6 +165,11 @@ public class ReadPubMedFileService {
 
     }
 
+    /**
+     * Create Journal Node
+     * @Properties: issn, title
+     * @param pubMed
+     */
     public void createJournalNode( final PubMed pubMed)
     {
         if (pubMed.getJournal() != null) {
@@ -195,6 +187,11 @@ public class ReadPubMedFileService {
         }
     }
 
+    /**
+     * Create Keyword Node
+     * @Properties kwid, term
+      * @param keyword
+     */
     public void createKeywordNode( final String keyword)
     {
             try ( Session session = driver.session() )
@@ -209,6 +206,11 @@ public class ReadPubMedFileService {
             }
     }
 
+    /**
+     * Create Mesh Node
+     * @Properties meshid, term
+     * @param term
+     */
     public void createMeshNode( final String term)
     {
             try ( Session session = driver.session() )
@@ -223,6 +225,12 @@ public class ReadPubMedFileService {
             }
     }
 
+
+    /**
+     * Create Citation and Author relationship
+     * @param pubMed
+     * @param author
+     */
     public void createCitationAuthorRelationshipNode( final PubMed pubMed, Author author)
     {
         int hashcode = author.getLastName() != null ? author.getLastName().hashCode() : (author.getForeName() != null ? author.getForeName().hashCode() : "NA".hashCode());
@@ -243,6 +251,10 @@ public class ReadPubMedFileService {
     }
 
 
+    /**
+     * Create Citation and Journal relationship
+     * @param pubMed
+     */
     public void createJournalAndCitationRelationshipNode( final PubMed pubMed)
     {
         try ( Session session = driver.session() )
@@ -260,6 +272,11 @@ public class ReadPubMedFileService {
         }
     }
 
+    /**
+     * Create Citation and Keyword relationship
+     * @param pubMed
+     * @param keyword
+     */
     public void createKeywordAndCitationRelationshipNode( final PubMed pubMed, final String keyword)
     {
         try ( Session session = driver.session() )
@@ -277,6 +294,11 @@ public class ReadPubMedFileService {
         }
     }
 
+    /**
+     * Create Citation and Mesh relationship
+     * @param pubMed
+     * @param term
+     */
     public void createMeshAndCitationRelationshipNode( final PubMed pubMed, final String term)
     {
         try ( Session session = driver.session() )
@@ -294,5 +316,38 @@ public class ReadPubMedFileService {
         }
     }
 
+    /**
+     * Helper mehod to get author data
+     * @param pubMedArticle
+     * @return
+     */
+    private String getAuthor(PubMedArticle pubMedArticle) {
+        return (pubMedArticle.getMedCitation().getArticle().getAuthorList().getAuthorList().get(0).getForeName() != null) ?
+                (pubMedArticle.getMedCitation().getArticle().getAuthorList().getAuthorList().get(0).getForeName().concat(" ")
+                        .concat(pubMedArticle.getMedCitation().getArticle().getAuthorList().getAuthorList().get(0).getLastName())) :
+                (pubMedArticle.getMedCitation().getArticle().getAuthorList().getAuthorList().get(0).getCollectiveName() != null ?
+                        pubMedArticle.getMedCitation().getArticle().getAuthorList().getAuthorList().get(0).getCollectiveName() : null);
+    }
+
+
+    /**
+     * Helper method to get date data
+     * @param pubDate
+     * @return
+     */
+    public Date getDate(DateCompleted pubDate) {
+        if(pubDate == null || pubDate.getYear() == null || pubDate.getMonth() == null || pubDate.getDay() == null ){
+            return null;
+        }
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.YEAR, pubDate.getYear());
+        cal.set(Calendar.MONTH, pubDate.getMonth() -1);
+        cal.set(Calendar.DATE, pubDate.getDay());
+        cal.set(Calendar.HOUR, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+
+        return new Date(cal.getTimeInMillis());
+    }
 
 }
